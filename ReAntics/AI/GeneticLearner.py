@@ -30,39 +30,113 @@ class AIPlayer(Player):
     #   cpy           - whether the player is a copy (when playing itself)
     ##
     def __init__(self, inputPlayerId):
-        super(AIPlayer, self).__init__(inputPlayerId, "Random")
-        self.placementArray = ['A', 'B', 'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B',
-                               'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B', 'B', 'G', 'B', 'B', 'B', 'G',
-                               'B', 'B', 'B', 'T']
+        super(AIPlayer, self).__init__(inputPlayerId, "Spore")
         self.geneList = []
+        self.geneListEnemy = []
         self.selectGeneIndex = 0
-        self.geneFitness = []
-        self.numGenes = 100
+        self.powerFactor = 3
+        self.multiplyFactor = 3
+        self.geneFitness = []        # gamesWon ^ powerFactor + 1
+        self.numGenes = 50         # always even
         self.geneLength = 40
-        self.inverseProb = 10   # 1/(.10)
+        self.geneLengthEnemy = 29
+        self.inverseProb = 10        # 1/(.10)
         self.maxInt = 9223372036854775807
+        self.gamesPerGene = 40
+        self.gamesLeft = self.gamesPerGene
+        self.initGenes()
 
     def initGenes(self):
         for i in range(0, self.numGenes):
             gene = []
+            geneEnemy = []
             for j in range(0, self.geneLength):
                 gene.append(random.randint(0, self.maxInt))
+            for j in range(0, self.geneLengthEnemy):
+                geneEnemy.append(random.randint(0, self.maxInt))
             self.geneList.append(gene)
+            self.geneListEnemy.append(geneEnemy)
             self.geneFitness.append(0)
 
         return True
+
+    def createGeneration(self):
+        adjustFitness = []
+        for fitness in self.geneFitness: adjustFitness.append(pow(fitness,self.powerFactor)+ fitness* + 1)
+        totFitness = sum(adjustFitness)
+        nextGen = []
+        nextGenEnemy = []
+        nextFitness = []
+
+        for i in range(0,round(self.numGenes/2)):
+            selectedParents = self.parentSelect(totFitness, adjustFitness)
+            randOrderInt = random.randint(0,1)
+            children = self.createChildren(selectedParents[randOrderInt], selectedParents[1-randOrderInt])
+            childrenEnemy = self.createChildrenEnemy(selectedParents[randOrderInt], selectedParents[1-randOrderInt])
+            nextGen.append(children[0])
+            nextGen.append(children[1])
+            nextGenEnemy.append(childrenEnemy[0])
+            nextGenEnemy.append(childrenEnemy[1])
+            nextFitness.append(0)
+            nextFitness.append(0)
+
+        self.geneList = nextGen
+        self.geneListEnemy = nextGenEnemy
+        self.geneFitness = nextFitness
+
+    def parentSelect(self, totFitness, adjustFitness):
+        firstSelectIndex = -1
+        randSelect = random.randint(1, totFitness)
+        for i in range(0, self.numGenes):
+            if randSelect <= adjustFitness[i]:
+                firstSelectIndex = i
+                break
+            else:
+                randSelect -= adjustFitness[i]
+
+        secondSelectIndex = -1
+        totFitness = totFitness - adjustFitness[firstSelectIndex]
+        randSelect = random.randint(0, totFitness)
+        for i in range(0, self.numGenes):
+            if i != firstSelectIndex:
+                if randSelect <= adjustFitness[i]:
+                    secondSelectIndex = i
+                    break
+                else:
+                    randSelect -= adjustFitness[i]
+
+        return [firstSelectIndex, secondSelectIndex]
 
     def createChildren(self, dadIndex, momIndex):
         sliceInt = random.randint(0, self.geneLength)
         startIndecies = slice(0, sliceInt, 1)
         endIndicies = slice(sliceInt, self.geneLength, 1)
-        son = zip(self.geneList[dadIndex][startIndecies], self.geneList[momIndex][endIndicies])
+        son = self.geneList[dadIndex][startIndecies].copy()
+        son.extend(self.geneList[momIndex][endIndicies].copy())
         sonMutator = random.randint(0, self.geneLength*self.inverseProb)
         if sonMutator < self.geneLength:
             son[sonMutator] = random.randint(0,self.maxInt)
-        daughter = zip(self.geneList[momIndex][startIndecies], self.geneList[dadIndex][endIndicies])
+        daughter = self.geneList[momIndex][startIndecies].copy()
+        daughter.extend(self.geneList[dadIndex][endIndicies].copy())
         daughterMutator = random.randint(0, self.geneLength*self.inverseProb)
         if daughterMutator < self.geneLength:
+            daughter[daughterMutator] = random.randint(0,self.maxInt)
+        children = [son, daughter]
+        return children
+
+    def createChildrenEnemy(self, dadIndex, momIndex):
+        sliceInt = random.randint(0, self.geneLengthEnemy)
+        startIndecies = slice(0, sliceInt, 1)
+        endIndicies = slice(sliceInt, self.geneLengthEnemy, 1)
+        son = self.geneListEnemy[dadIndex][startIndecies].copy()
+        son.extend(self.geneListEnemy[momIndex][endIndicies].copy())
+        sonMutator = random.randint(0, self.geneLengthEnemy*self.inverseProb)
+        if sonMutator < self.geneLengthEnemy:
+            son[sonMutator] = random.randint(0,self.maxInt)
+        daughter = self.geneListEnemy[momIndex][startIndecies].copy()
+        daughter.extend(self.geneListEnemy[dadIndex][endIndicies].copy())
+        daughterMutator = random.randint(0, self.geneLengthEnemy*self.inverseProb)
+        if daughterMutator < self.geneLengthEnemy:
             daughter[daughterMutator] = random.randint(0,self.maxInt)
         children = [son, daughter]
         return children
@@ -85,39 +159,29 @@ class AIPlayer(Player):
         numToPlace = 0
         # implemented by students to return their next move
         if currentState.phase == SETUP_PHASE_1:  # stuff on my side
-            numToPlace = 11
-            moves = []
-            for i in range(0, numToPlace):
-                move = None
-                while move == None:
-                    # Choose any x location
-                    x = random.randint(0, 9)
-                    # Choose any y location on your side of the board
-                    y = random.randint(0, 3)
-                    # Set the move if this space is empty
-                    if currentState.board[x][y].constr == None and (x, y) not in moves:
-                        move = (x, y)
-                        # Just need to make the space non-empty. So I threw whatever I felt like in there.
-                        currentState.board[x][y].constr == True
-                moves.append(move)
+            geneIndices = [j[0] for j in sorted(enumerate(self.geneList[self.selectGeneIndex]), key=lambda x:x[1])]
+            moves = [(-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1)]
+            for i in range(0, self.geneLength):
+                if geneIndices[i] <= 10:
+                    moves[geneIndices[i]] = (i%10, round((i-i%10)/10))
+
             return moves
         elif currentState.phase == SETUP_PHASE_2:  # stuff on foe's side
-            numToPlace = 2
+            geneIndices = [j[0] for j in sorted(enumerate(self.geneListEnemy[self.selectGeneIndex]), key=lambda x:x[1])]
             moves = []
-            for i in range(0, numToPlace):
-                move = None
-                while move == None:
-                    # Choose any x location
-                    x = random.randint(0, 9)
-                    # Choose any y location on enemy side of the board
-                    y = random.randint(6, 9)
-                    # Set the move if this space is empty
-                    if currentState.board[x][y].constr == None and (x, y) not in moves:
-                        move = (x, y)
-                        # Just need to make the space non-empty. So I threw whatever I felt like in there.
-                        currentState.board[x][y].constr == True
-                moves.append(move)
-            return moves
+            for i in range(0, self.geneLengthEnemy):
+                if geneIndices[i] <= 1:
+                    if i < 9:
+                        moves.append((i,6))
+                    elif i < 17:
+                        moves.append((i-9,7))
+                    elif i < 21:
+                        moves.append((i-17,8))
+                    elif i < 23:
+                        moves.append((i-16,8))
+                    else:
+                        moves.append((i-23,9))
+            return moves     #temporary hard code food placement
         else:
             return [(0, 0)]
 
@@ -160,5 +224,25 @@ class AIPlayer(Player):
     # This agent doens't learn
     #
     def registerWin(self, hasWon):
-        # method templaste, not implemented
-        pass
+        if hasWon: self.geneFitness[self.selectGeneIndex] += 1
+
+        self.gamesLeft -= 1
+        if self.gamesLeft == 0:
+            self.gamesLeft = self.gamesPerGene
+            self.selectGeneIndex += 1
+
+        if self.selectGeneIndex >= self.numGenes:
+            self.printGenerationResults()
+            self.createGeneration()
+            self.selectGeneIndex = 0
+
+    def printGenerationResults(self):
+        maxFitness = max(self.geneFitness)
+        indexOfMax = -1
+        for i in range(0,self.numGenes):
+            if self.geneFitness[i] == maxFitness:
+                indexOfMax = i
+                break
+        print("Fitness of best gene: " + str(maxFitness))
+        print("Gene:" + str([j[0] for j in sorted(enumerate(self.geneList[indexOfMax]), key=lambda x:x[1])]))
+        print("GeneEnemy:" + str([j[0] for j in sorted(enumerate(self.geneListEnemy[indexOfMax]), key=lambda x:x[1])]))
