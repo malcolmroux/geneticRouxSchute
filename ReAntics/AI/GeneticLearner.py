@@ -1,5 +1,6 @@
 import random
 import sys
+import os
 
 sys.path.append("..")  # so other modules can be found in parent dir
 from Player import *
@@ -22,6 +23,7 @@ from AIPlayerUtils import *
 ##
 class AIPlayer(Player):
 
+    ##
     # __init__
     # Description: Creates a new Player
     #
@@ -31,22 +33,31 @@ class AIPlayer(Player):
     ##
     def __init__(self, inputPlayerId):
         super(AIPlayer, self).__init__(inputPlayerId, "Spore")
-        self.geneList = []
-        self.geneListEnemy = []
+        self.geneList = []          # genes for our side of the board stored here
+        self.geneListEnemy = []     # genes for their side of the board stored here
         self.selectGeneIndex = 0
-        self.powerFactor = 3
-        self.multiplyFactor = 3
-        self.geneFitness = []        # gamesWon ^ powerFactor + 1
-        self.numGenes = 50         # always even
+        self.powerFactor = 3        # used to find weighted fitness
+        self.multiplyFactor = 3     # used to find weighted fitness
+        self.geneFitness = []       # gamesWon ^ powerFactor + 1
+        self.numGenes = 50          # always even
         self.geneLength = 40
         self.geneLengthEnemy = 29
-        self.inverseProb = 10        # 1/(.10)
+        self.inverseProb = 10        # inverse of probability to mutate
         self.maxInt = 9223372036854775807
-        self.gamesPerGene = 40
-        self.gamesLeft = self.gamesPerGene
+        self.gamesPerGene = 100
+        self.bestFitnessOfGen = 0
+        self.curGameState = None    # holds state related to current gene
+        self.gamesLeft = self.gamesPerGene # games left for current gene
         self.initGenes()
 
+    ##
+    # initGenes
+    # helper for init
+    # initializes genes and fitness
+    #
+    ##
     def initGenes(self):
+        # initialized genes and fitness (random, 0)
         for i in range(0, self.numGenes):
             gene = []
             geneEnemy = []
@@ -60,19 +71,31 @@ class AIPlayer(Player):
 
         return True
 
+    ##
+    # create generation
+    # creates next generation based on previous generations genes and fitneesses
+    #
+    ##
     def createGeneration(self):
-        adjustFitness = []
-        for fitness in self.geneFitness: adjustFitness.append(pow(fitness,self.powerFactor)+ fitness* + 1)
-        totFitness = sum(adjustFitness)
-        nextGen = []
-        nextGenEnemy = []
-        nextFitness = []
+        adjustFitness = []  # holds adjusted fitness level (amount of enteries of a gene into the lottery)
 
+        # adjustFitness = fitness^powerFactor + fitness*multiplyFactor + 1
+        for fitness in self.geneFitness: adjustFitness.append(pow(fitness,self.powerFactor)+ fitness*self.multiplyFactor + 1)
+        totFitness = sum(adjustFitness)
+        nextGen = []        # holds next generation genes
+        nextGenEnemy = []   # holds next generation genes
+        nextFitness = []    # holds next generation fitness (always 0)
+
+        # create pairs of genes (siblings)
         for i in range(0,round(self.numGenes/2)):
-            selectedParents = self.parentSelect(totFitness, adjustFitness)
-            randOrderInt = random.randint(0,1)
+            selectedParents = self.parentSelect(totFitness, adjustFitness)  # selects parents based on adjusted fitness
+            randOrderInt = random.randint(0,1)  # used to randomize which order the parents are spliced together (maybe unnecessary)
+
+            # create a pair of children
             children = self.createChildren(selectedParents[randOrderInt], selectedParents[1-randOrderInt])
             childrenEnemy = self.createChildrenEnemy(selectedParents[randOrderInt], selectedParents[1-randOrderInt])
+
+            #append to all lists
             nextGen.append(children[0])
             nextGen.append(children[1])
             nextGenEnemy.append(childrenEnemy[0])
@@ -80,13 +103,27 @@ class AIPlayer(Player):
             nextFitness.append(0)
             nextFitness.append(0)
 
+        # replace instance variables
         self.geneList = nextGen
         self.geneListEnemy = nextGenEnemy
         self.geneFitness = nextFitness
 
+    ##
+    # parentSelect
+    # selects two parents based on fitnesses versus total fitness
+    #
+    # Parameters:
+    #   totFitness - sum of adjusted fitnesses
+    #   adjustFitness - adjusted gross fitnesses of each gene
+    #
+    # Return:
+    # [firstSelectIndex, secondSelectIndex] - index of parents selected
     def parentSelect(self, totFitness, adjustFitness):
+        # select first parent
         firstSelectIndex = -1
+        # select a random number number to total fitness
         randSelect = random.randint(1, totFitness)
+        # pull out the index of fitness that overlaps random select
         for i in range(0, self.numGenes):
             if randSelect <= adjustFitness[i]:
                 firstSelectIndex = i
@@ -94,6 +131,8 @@ class AIPlayer(Player):
             else:
                 randSelect -= adjustFitness[i]
 
+        # select second parent
+        # same process but remove first parent from consideration
         secondSelectIndex = -1
         totFitness = totFitness - adjustFitness[firstSelectIndex]
         randSelect = random.randint(0, totFitness)
@@ -107,23 +146,51 @@ class AIPlayer(Player):
 
         return [firstSelectIndex, secondSelectIndex]
 
+    ##
+    # createChildren
+    # create children of genes only concerning our side of the board
+    #
+    # Parameters:
+    #   dadIndex, momIndex - indecies of parent genes
+    #
+    # Returns:
+    #   children: list of two child genes
+    ##
     def createChildren(self, dadIndex, momIndex):
-        sliceInt = random.randint(0, self.geneLength)
-        startIndecies = slice(0, sliceInt, 1)
-        endIndicies = slice(sliceInt, self.geneLength, 1)
-        son = self.geneList[dadIndex][startIndecies].copy()
-        son.extend(self.geneList[momIndex][endIndicies].copy())
+
+        sliceInt = random.randint(0, self.geneLength)   # index to slice gene at
+        startIndecies = slice(0, sliceInt, 1)   # create start indecies
+        endIndicies = slice(sliceInt, self.geneLength, 1)   # create end indecies
+
+        son = self.geneList[dadIndex][startIndecies].copy() # copy dad genes at start indecies
+        son.extend(self.geneList[momIndex][endIndicies].copy()) # append mom genes at end indecies
+
+        # randomly mutate one gene
         sonMutator = random.randint(0, self.geneLength*self.inverseProb)
         if sonMutator < self.geneLength:
             son[sonMutator] = random.randint(0,self.maxInt)
+
+        # create daughter (same process, reverse order)
         daughter = self.geneList[momIndex][startIndecies].copy()
         daughter.extend(self.geneList[dadIndex][endIndicies].copy())
+
         daughterMutator = random.randint(0, self.geneLength*self.inverseProb)
         if daughterMutator < self.geneLength:
             daughter[daughterMutator] = random.randint(0,self.maxInt)
         children = [son, daughter]
+
         return children
 
+    ##
+    # createChildren
+    # create children of genes only concerning enemy side of the board
+    #
+    # Parameters:
+    #   dadIndex, momIndex - indecies of parent genes
+    #
+    # Returns:
+    #   children: list of two child genes
+    ##
     def createChildrenEnemy(self, dadIndex, momIndex):
         sliceInt = random.randint(0, self.geneLengthEnemy)
         startIndecies = slice(0, sliceInt, 1)
@@ -159,16 +226,27 @@ class AIPlayer(Player):
         numToPlace = 0
         # implemented by students to return their next move
         if currentState.phase == SETUP_PHASE_1:  # stuff on my side
+            # create am array parallel to selected gene with numbers sorted from highest to lowest
+            # example: [20 8 14 2 12] --> [4 1 3 0 2]
             geneIndices = [j[0] for j in sorted(enumerate(self.geneList[self.selectGeneIndex]), key=lambda x:x[1])]
+            # move array:
+            #   index 0: antihill coords (lowest number in gene)
+            #   index 1: tunnel coords (second lowest number in gene)
+            #   index 2-10: grass coords (third through eleventh lowest number in genes)
             moves = [(-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1), (-1,-1)]
+            # place gene in moves appropriately, gene listed from left to right, top to bottom
             for i in range(0, self.geneLength):
                 if geneIndices[i] <= 10:
                     moves[geneIndices[i]] = (i%10, round((i-i%10)/10))
 
             return moves
         elif currentState.phase == SETUP_PHASE_2:  # stuff on foe's side
+            # create similar parallel array
             geneIndices = [j[0] for j in sorted(enumerate(self.geneListEnemy[self.selectGeneIndex]), key=lambda x:x[1])]
+            # move array:
+            #   index 0,1: food coords
             moves = []
+            # place gene in moves appropriately, gene listed top to bottom, left to right, skip over booger's used coords
             for i in range(0, self.geneLengthEnemy):
                 if geneIndices[i] <= 1:
                     if i < 9:
@@ -195,6 +273,7 @@ class AIPlayer(Player):
     # Return: The Move to be made
     ##
     def getMove(self, currentState):
+        self.curGameState = currentState
         moves = listAllLegalMoves(currentState)
         selectedMove = moves[random.randint(0, len(moves) - 1)];
 
@@ -220,29 +299,53 @@ class AIPlayer(Player):
 
     ##
     # registerWin
+    # register wins in fitness, decrement games left, move to next gene/generation
     #
     # This agent doens't learn
     #
     def registerWin(self, hasWon):
+        # count a win
         if hasWon: self.geneFitness[self.selectGeneIndex] += 1
 
         self.gamesLeft -= 1
+
+        # if we're at the end of a gene's games
         if self.gamesLeft == 0:
+            # if this is the best fitness gene so far
+            if self.geneFitness[self.selectGeneIndex] >= self.bestFitnessOfGen:
+                self.bestFitnessOfGen = self.geneFitness[self.selectGeneIndex]
+                #print state to temp.txt
+                self.printBestFitness()
+            # reset games
             self.gamesLeft = self.gamesPerGene
+            # select next gene
             self.selectGeneIndex += 1
 
+        # if we're at the end of a generation
         if self.selectGeneIndex >= self.numGenes:
+            # append temp.txt to output file
             self.printGenerationResults()
             self.createGeneration()
+            # reset fitness and gene index
+            self.bestFitnessOfGen = 0
             self.selectGeneIndex = 0
+            # remove temp.txt
+            os.remove("temp.txt")
+    ##
+    # printBestFitness
+    # print current saved state
+    ##
+    def printBestFitness(self):
+        f = open("temp.txt", "w+")
+        sys.stdout = f
+        asciiPrintState(self.curGameState)
+        f.close()
 
+    ##
+    # printGenerationResults
+    # append temp.txt to output file
+    ##
     def printGenerationResults(self):
-        maxFitness = max(self.geneFitness)
-        indexOfMax = -1
-        for i in range(0,self.numGenes):
-            if self.geneFitness[i] == maxFitness:
-                indexOfMax = i
-                break
-        print("Fitness of best gene: " + str(maxFitness))
-        print("Gene:" + str([j[0] for j in sorted(enumerate(self.geneList[indexOfMax]), key=lambda x:x[1])]))
-        print("GeneEnemy:" + str([j[0] for j in sorted(enumerate(self.geneListEnemy[indexOfMax]), key=lambda x:x[1])]))
+        f = open("schutten19_roux19.txt", "a+")
+        f.write(open("temp.txt").read())
+        f.close()
